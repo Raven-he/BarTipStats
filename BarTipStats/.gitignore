@@ -1,0 +1,19 @@
+# Xcode
+*.xcodeproj
+*.xcworkspace
+*.xcuserdata
+DerivedData/
+.build/
+
+# macOS
+.DS_Store
+*.swp
+*.swo
+
+# SwiftPM
+Packages/
+*.build/
+
+# 临时文件
+*~
+*.orig

@@ -1,0 +1,75 @@
+# 云编译 → 产出 IPA → 供 Sideloadly 安装
+# 推送到 GitHub 后自动执行，无需 Mac
+
+name: Build BarTipStats
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  PROJECT_NAME: BarTipStats
+  BUNDLE_ID: com.bartipstats.ios  # ← 如果编译失败，改成你自己的唯一 ID
+
+jobs:
+  build:
+    name: 编译 IPA
+    runs-on: macos-14
+    defaults:
+      run:
+        shell: bash
+        working-directory: .
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 XcodeGen
+        run: brew install xcodegen
+
+      - name: 设置 Bundle ID 和 Team
+        run: |
+          cat > project-local.yml << EOF
+          settings:
+            PRODUCT_BUNDLE_IDENTIFIER: ${{ env.BUNDLE_ID }}
+          targets:
+            BarTipStats:
+              settings:
+                PRODUCT_BUNDLE_IDENTIFIER: ${{ env.BUNDLE_ID }}
+                CODE_SIGN_STYLE: Manual
+                CODE_SIGNING_REQUIRED: NO
+                CODE_SIGNING_ALLOWED: NO
+          EOF
+
+      - name: 生成 Xcode 项目
+        run: xcodegen generate --use-project-locale zh_CN
+
+      - name: 编译（Release 模式）
+        run: |
+          xcodebuild build \
+            -project "${PROJECT_NAME}.xcodeproj" \
+            -scheme "${PROJECT_NAME}" \
+            -sdk iphoneos \
+            -configuration Release \
+            -derivedDataPath DerivedData \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: 打包为 .app 目录
+        run: |
+          mkdir -p Payload
+          cp -r "DerivedData/Build/Products/Release-iphoneos/${PROJECT_NAME}.app" Payload/
+
+      - name: 压缩为 IPA
+        run: |
+          zip -r "${PROJECT_NAME}.zip" Payload/
+          mv "${PROJECT_NAME}.zip" "${PROJECT_NAME}.ipa"
+
+      - name: 上传 IPA 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: BarTipStats.ipa
+          path: BarTipStats.ipa
+          if-no-files-found: error
