@@ -1,0 +1,88 @@
+name: Build BarTipStats
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  PROJECT_NAME: BarTipStats
+  BUNDLE_ID: com.bartipstats.ios
+
+jobs:
+  build:
+    name: 编译 IPA
+    runs-on: macos-14
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 列出所有 Swift 文件（调试）
+        run: find . -name "*.swift" | sort
+
+      - name: 安装 XcodeGen
+        run: |
+          brew install xcodegen
+          echo "✅ XcodeGen 版本: $(xcodegen --version)"
+
+      - name: 替换 Bundle ID
+        run: |
+          sed -i '' "s/com.bartipstats.app/${{ env.BUNDLE_ID }}/g" project.yml
+          echo "✅ Bundle ID 已替换为: ${{ env.BUNDLE_ID }}"
+
+      - name: 打印 project.yml（调试）
+        run: cat project.yml
+
+      - name: 生成 Xcode 项目
+        run: |
+          xcodegen generate --verbose
+          echo "✅ Xcode 项目已生成"
+          ls -la *.xcodeproj
+
+      - name: 检查 Xcode 版本
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: 编译
+        run: |
+          xcodebuild build \
+            -project "${PROJECT_NAME}.xcodeproj" \
+            -scheme "${PROJECT_NAME}" \
+            -sdk iphoneos \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath DerivedData \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            DEVELOPMENT_TEAM="" \
+            -quiet 2>&1
+        timeout-minutes: 15
+
+      - name: 验证编译产物
+        run: |
+          APP_PATH="DerivedData/Build/Products/Release-iphoneos/${PROJECT_NAME}.app"
+          echo "🔍 检查路径: $APP_PATH"
+          ls -la "$APP_PATH" || echo "❌ .app 未生成"
+          if [ -d "$APP_PATH" ]; then
+            echo "✅ 编译成功! .app 大小: $(du -sh "$APP_PATH" | cut -f1)"
+          else
+            echo "❌ 编译失败，查看上方错误日志"
+            exit 1
+          fi
+
+      - name: 打包为 IPA
+        run: |
+          mkdir -p Payload
+          cp -r "DerivedData/Build/Products/Release-iphoneos/${PROJECT_NAME}.app" Payload/
+          zip -r "${PROJECT_NAME}.ipa" Payload/
+          echo "✅ IPA 已生成: $(ls -lh *.ipa)"
+
+      - name: 上传 IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: BarTipStats.ipa
+          path: "*.ipa"
+          if-no-files-found: error
