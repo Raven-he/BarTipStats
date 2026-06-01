@@ -11,6 +11,7 @@ on:
 env:
   PROJECT_NAME: BarTipStats
   BUNDLE_ID: com.bartipstats.ios
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
