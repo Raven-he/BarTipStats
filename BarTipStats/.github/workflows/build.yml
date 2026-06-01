@@ -1,6 +1,3 @@
-# BarTipStats 云编译
-# 用法: 推送 main 分支 或 手动触发 workflow_dispatch
-
 name: Build BarTipStats
 
 on:
@@ -10,8 +7,6 @@ on:
 
 env:
   PROJECT_NAME: BarTipStats
-  BUNDLE_ID: com.bartipstats.ios
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
@@ -25,25 +20,55 @@ jobs:
       - name: 安装 XcodeGen
         run: brew install xcodegen
 
-      - name: 替换 Bundle ID
+      - name: 简化 project.yml
         run: |
-          sed -i '' "s/com.bartipstats.app/${{ env.BUNDLE_ID }}/g" project.yml
-          echo "✅ Bundle ID -> ${{ env.BUNDLE_ID }}"
+          cat > project.yml << 'YML'
+          name: BarTipStats
+          options:
+            bundleIdPrefix: com.bartipstats
+            deploymentTarget:
+              iOS: "17.0"
+          settings:
+            base:
+              SWIFT_VERSION: "5.9"
+              TARGETED_DEVICE_FAMILY: "1"
+          targets:
+            BarTipStats:
+              type: application
+              platform: iOS
+              sources:
+                - App
+                - Models
+                - ViewModels
+                - Views
+                - Services
+                - Extensions
+                - Resources/Info.plist
+                - Resources/Assets.xcassets
+              settings:
+                base:
+                  PRODUCT_BUNDLE_IDENTIFIER: com.bartipstats.ios
+                  INFOPLIST_FILE: Resources/Info.plist
+                  CODE_SIGN_STYLE: Manual
+                  CODE_SIGNING_REQUIRED: NO
+                  CODE_SIGNING_ALLOWED: NO
+                  GENERATE_INFOPLIST_FILE: NO
+                  ASSETCATALOG_COMPILER_APPICON_NAME: ""
+          YML
+          echo "✅ project.yml 已简化"
 
       - name: 生成 Xcode 项目
         run: |
-          rm -rf BarTipStats.xcodeproj
-          xcodegen generate
-          echo "✅ xcodeproj 已生成"
-          ls -la *.xcodeproj/
-          echo "--- 以下为可用 Scheme ---"
-          xcodebuild -list -project BarTipStats.xcodeproj
+          xcodegen generate 2>&1
+          echo "=== 检查生成 ==="
+          ls -la *.xcodeproj/ 2>/dev/null || echo "❌ xcodeproj 未生成"
+          xcodebuild -list -project ${PROJECT_NAME}.xcodeproj 2>&1
 
-      - name: 编译（不签名）
+      - name: 编译
         run: |
           xcodebuild \
-            -project "${PROJECT_NAME}.xcodeproj" \
-            -scheme "${PROJECT_NAME}" \
+            -project ${PROJECT_NAME}.xcodeproj \
+            -scheme ${PROJECT_NAME} \
             -sdk iphoneos \
             -configuration Release \
             -destination 'generic/platform=iOS' \
@@ -51,23 +76,23 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            DEVELOPMENT_TEAM="" \
             build 2>&1
         timeout-minutes: 15
 
-      - name: 打包为 IPA
+      - name: 打包 IPA
         run: |
           APP_PATH="DerivedData/Build/Products/Release-iphoneos/${PROJECT_NAME}.app"
-          if [ ! -d "$APP_PATH" ]; then
-            echo "❌ .app 未生成！搜索可能的位置..."
-            find DerivedData -name "*.app" -type d 2>/dev/null || echo "未找到任何 .app"
+          if [ -d "$APP_PATH" ]; then
+            echo "✅ 编译成功: $(du -sh "$APP_PATH" | cut -f1)"
+            mkdir -p Payload
+            cp -r "$APP_PATH" Payload/
+            zip -r "${PROJECT_NAME}.ipa" Payload/
+            ls -lh *.ipa
+          else
+            echo "❌ .app 未找到，搜索 DerivedData..."
+            find DerivedData -name "*.app" -maxdepth 5 2>/dev/null || echo "未找到"
             exit 1
           fi
-          echo "✅ 编译成功: $(du -sh "$APP_PATH" | cut -f1)"
-          mkdir -p Payload
-          cp -r "$APP_PATH" Payload/
-          zip -r "${PROJECT_NAME}.ipa" Payload/
-          echo "✅ IPA: $(ls -lh *.ipa | awk '{print $5}')"
 
       - name: 上传 IPA
         uses: actions/upload-artifact@v4
