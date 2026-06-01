@@ -9,23 +9,13 @@ enum AppContainer {
             TipRecord.self
         ])
 
-        // 本地存储配置
+        // 本地存储（后续可开启 CloudKit）
         let config = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false,
-            cloudKitDatabase: .private("iCloud.com.bartipstats.app")
+            cloudKitDatabase: .none
         )
 
-        do {
-            return try ModelContainer(for: schema, configurations: config)
-        } catch {
-            // CloudKit 配置失败时回退到仅本地存储
-            let localConfig = ModelConfiguration(
-                schema: schema,
-                isStoredInMemoryOnly: false,
-                cloudKitDatabase: .none
-            )
-            return try! ModelContainer(for: schema, configurations: localConfig)
-        }
+        return try! ModelContainer(for: schema, configurations: config)
     }
 }
