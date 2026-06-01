@@ -1,3 +1,6 @@
+# BarTipStats 云编译
+# 用法: 推送 main 分支 或 手动触发 workflow_dispatch
+
 name: Build BarTipStats
 
 on:
@@ -18,36 +21,26 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 列出所有 Swift 文件（调试）
-        run: find . -name "*.swift" | sort
-
       - name: 安装 XcodeGen
-        run: |
-          brew install xcodegen
-          echo "✅ XcodeGen 版本: $(xcodegen --version)"
+        run: brew install xcodegen
 
       - name: 替换 Bundle ID
         run: |
           sed -i '' "s/com.bartipstats.app/${{ env.BUNDLE_ID }}/g" project.yml
-          echo "✅ Bundle ID 已替换为: ${{ env.BUNDLE_ID }}"
-
-      - name: 打印 project.yml（调试）
-        run: cat project.yml
+          echo "✅ Bundle ID -> ${{ env.BUNDLE_ID }}"
 
       - name: 生成 Xcode 项目
         run: |
-          xcodegen generate --verbose
-          echo "✅ Xcode 项目已生成"
-          ls -la *.xcodeproj
+          rm -rf BarTipStats.xcodeproj
+          xcodegen generate
+          echo "✅ xcodeproj 已生成"
+          ls -la *.xcodeproj/
+          echo "--- 以下为可用 Scheme ---"
+          xcodebuild -list -project BarTipStats.xcodeproj
 
-      - name: 检查 Xcode 版本
+      - name: 编译（不签名）
         run: |
-          xcodebuild -version
-          swift --version
-
-      - name: 编译
-        run: |
-          xcodebuild build \
+          xcodebuild \
             -project "${PROJECT_NAME}.xcodeproj" \
             -scheme "${PROJECT_NAME}" \
             -sdk iphoneos \
@@ -58,27 +51,22 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             DEVELOPMENT_TEAM="" \
-            -quiet 2>&1
+            build 2>&1
         timeout-minutes: 15
-
-      - name: 验证编译产物
-        run: |
-          APP_PATH="DerivedData/Build/Products/Release-iphoneos/${PROJECT_NAME}.app"
-          echo "🔍 检查路径: $APP_PATH"
-          ls -la "$APP_PATH" || echo "❌ .app 未生成"
-          if [ -d "$APP_PATH" ]; then
-            echo "✅ 编译成功! .app 大小: $(du -sh "$APP_PATH" | cut -f1)"
-          else
-            echo "❌ 编译失败，查看上方错误日志"
-            exit 1
-          fi
 
       - name: 打包为 IPA
         run: |
+          APP_PATH="DerivedData/Build/Products/Release-iphoneos/${PROJECT_NAME}.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "❌ .app 未生成！搜索可能的位置..."
+            find DerivedData -name "*.app" -type d 2>/dev/null || echo "未找到任何 .app"
+            exit 1
+          fi
+          echo "✅ 编译成功: $(du -sh "$APP_PATH" | cut -f1)"
           mkdir -p Payload
-          cp -r "DerivedData/Build/Products/Release-iphoneos/${PROJECT_NAME}.app" Payload/
+          cp -r "$APP_PATH" Payload/
           zip -r "${PROJECT_NAME}.ipa" Payload/
-          echo "✅ IPA 已生成: $(ls -lh *.ipa)"
+          echo "✅ IPA: $(ls -lh *.ipa | awk '{print $5}')"
 
       - name: 上传 IPA
         uses: actions/upload-artifact@v4
